@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   production:
-    image: ghcr.io/nervus-tech/nervus-notification:prod
+    image: ghcr.io/nervus-tech/nervus-notification:v1.0.0
     ports:
       - "8104:8080"
     environment:
@@ -11,6 +11,9 @@ services:
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - SPRING_JPA_SHOW_SQL=false
       - SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA=prod_notification
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_CONSUMER_TOPIC=notifications
+      - SENDGRID_API_KEY=your_sendgrid_api_key
     deploy:
       resources:
         limits:
