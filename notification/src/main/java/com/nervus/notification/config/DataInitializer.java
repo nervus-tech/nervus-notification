@@ -31,7 +31,7 @@ public class DataInitializer implements CommandLineRunner {
             );
             notificationRepository.save(notification1);
             notificationRepository.save(notification2);
-            System.out.println("Seeded 2 notifications into notifications");
+            System.out.println("Seeded 2 notifications into notification service");
         } else {
             System.out.println("Notifications already seeded, skipping...");
         }

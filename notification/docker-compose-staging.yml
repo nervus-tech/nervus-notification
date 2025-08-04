@@ -1,7 +1,8 @@
 version: '3.8'
 services:
-  staging:
+  notification-staging:
     image: ghcr.io/nervus-tech/nervus-notification:v1.0.0-staging
+    container_name: notification-staging
     ports:
       - "8103:8080"
     environment:
@@ -10,7 +11,7 @@ services:
       - SPRING_DATASOURCE_PASSWORD=secure_password
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - SPRING_JPA_SHOW_SQL=true
-      - SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA=staging_notification
+      - HIBERNATE_DEFAULT_SCHEMA=staging_notification
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_CONSUMER_TOPIC=notifications
       - SENDGRID_API_KEY=your_sendgrid_api_key
@@ -19,5 +20,11 @@ services:
         limits:
           cpus: "0.5"
           memory: 1G
+    networks:
+      - nervus-infrastructure_default
     # depends_on removed - expects shared infrastructure Postgres
   # Postgres service removed - expects shared infrastructure 
+
+networks:
+  nervus-infrastructure_default:
+    external: true 
