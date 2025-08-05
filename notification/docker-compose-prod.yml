@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   notification-prod:
-    image: ghcr.io/nervus-tech/nervus-notification:v1.0.0-prod
+    image: ghcr.io/nervus-tech/nervus-notification:v1.1.0-prod
     container_name: notification-prod
     ports:
       - "8104:8080"
@@ -12,6 +12,10 @@ services:
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - SPRING_JPA_SHOW_SQL=false
       - HIBERNATE_DEFAULT_SCHEMA=prod_notification
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_CLIENT_REGISTER_WITH_EUREKA=true
+      - EUREKA_CLIENT_FETCH_REGISTRY=true
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_CONSUMER_TOPIC=notifications
       - SENDGRID_API_KEY=your_sendgrid_api_key
