@@ -1,0 +1,148 @@
+name: CI Pipeline - Notification Service
+
+on:
+  push:
+    branches: [main, develop, feature/*]
+  pull_request:
+    branches: [main, develop, feature/*]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: nervus_user
+          POSTGRES_PASSWORD: secure_password
+          POSTGRES_DB: nervus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      eureka:
+        image: ghcr.io/nervus-tech/nervus-eureka-server:v1.0.0
+        ports:
+          - 8761:8761
+
+      zookeeper:
+        image: confluentinc/cp-zookeeper:7.4.0
+        env:
+          ZOOKEEPER_CLIENT_PORT: 2181
+          ZOOKEEPER_TICK_TIME: 2000
+        ports:
+          - 2181:2181
+        options: >-
+          --health-cmd "echo ruok | nc -w 2 localhost 2181 | grep imok || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      kafka:
+        image: confluentinc/cp-kafka:7.4.0
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "nc -z localhost 9092 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'corretto'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Install PostgreSQL Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Create Schema
+        run: |
+          psql -h localhost -U nervus_user -d nervus -c "CREATE SCHEMA IF NOT EXISTS local_notification;"
+
+      - name: Build with Maven
+        run: mvn clean install -f notification/pom.xml -DskipTests
+
+      - name: Run Tests (if test files exist)
+        run: |
+          if [ -d "notification/src/test" ] && [ "$(ls -A notification/src/test)" ]; then
+            mvn test -f notification/pom.xml
+          else
+            echo "⚠️ No test files found, skipping tests"
+          fi
+
+      - name: Build Docker Image
+        run: |
+          cd notification
+          docker build -t ghcr.io/nervus-tech/nervus-notification:${{ github.sha }} .
+          docker tag ghcr.io/nervus-tech/nervus-notification:${{ github.sha }} ghcr.io/nervus-tech/nervus-notification:latest
+
+      - name: Security Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'ghcr.io/nervus-tech/nervus-notification:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+
+      - name: Upload Trivy Scan Results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Test Docker Container
+        run: |
+          cd notification
+          docker run -d --name test-container -p 8080:8080 \
+            -e SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/nervus \
+            -e SPRING_DATASOURCE_USERNAME=nervus_user \
+            -e SPRING_DATASOURCE_PASSWORD=secure_password \
+            -e HIBERNATE_DEFAULT_SCHEMA=local_notification \
+            -e EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://localhost:8761/eureka/ \
+            -e EUREKA_CLIENT_REGISTER_WITH_EUREKA=true \
+            -e EUREKA_CLIENT_FETCH_REGISTRY=true \
+            -e EUREKA_INSTANCE_PREFER_IP_ADDRESS=true \
+            -e KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
+            -e KAFKA_CONSUMER_TOPIC=notifications \
+            -e SENDGRID_API_KEY=test_key \
+            ghcr.io/nervus-tech/nervus-notification:${{ github.sha }}
+          sleep 25
+          curl -f http://localhost:8080/actuator/health || (docker logs test-container; exit 1)
+          docker stop test-container
+          docker rm test-container
+
+      - name: Push to Registry (on main/develop)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+        run: |
+          echo ${{ secrets.GH_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker push ghcr.io/nervus-tech/nervus-notification:${{ github.sha }}
+          docker push ghcr.io/nervus-tech/nervus-notification:latest
+
+  # duplicate block removed
